@@ -1486,13 +1486,15 @@ function pageContact(){
   `;
 }
 
-function pageBookingConfirmed(isPreview){
+function pageBookingConfirmed(allowConfirm){
   /* route() already blocks direct/unauthorized access to this route — this
      is a second, redundant check so the function is safe to call on its own.
-     A real booking's flag is single-use (cleared the moment it renders); the
-     unlisted ?key= preview link is reusable and never touches that flag. */
+     allowConfirm is true for any of: a real booking's single-use session
+     flag (internal calendar flow), the unlisted ?key= owner preview link,
+     or arriving on the clean /cpaiconsultationconfirmed URL (external GHL
+     redirect) — only the flag gets cleared here, the other two are reusable. */
   const hasFlag = sessionStorage.getItem(BOOKING_FLAG) === '1';
-  if(!hasFlag && !isPreview) return '';
+  if(!hasFlag && !allowConfirm) return '';
   if(hasFlag) sessionStorage.removeItem(BOOKING_FLAG);
   return `
   <section class="page-hero"><div class="wrap">
@@ -1583,10 +1585,13 @@ const app = document.getElementById('app');
 let heroRAF = null;
 
 function go(h){ location.hash = h; }
-/* /#/booking-confirmed is gated: only reachable right after a real GHL
-   booking event sets this session flag (see the message listener below).
-   Anyone landing here directly — bookmark, typed URL, back button after
-   the flag's consumed — gets bounced to Contact before anything renders. */
+/* /#/booking-confirmed is gated: reachable right after a real GHL booking
+   event sets this session flag (see the message listener below), via the
+   clean /cpaiconsultationconfirmed URL (the redirect target configured in
+   GHL's own calendar settings for bookings made outside this site), or
+   with the owner's preview key below. Anyone landing here any other way —
+   bookmark, typed hash URL, back button after the flag's consumed — gets
+   bounced to Contact before anything renders. */
 const BOOKING_FLAG = 'cpaiBookingConfirmed';
 /* Unlisted review link for the owner — not linked anywhere in the site's
    nav or content, so it's only reachable by someone who has this exact
@@ -1609,7 +1614,14 @@ function route(){
   const parts = onCleanConfirmPath ? ['booking-confirmed'] : hashPathStr.split('/');
   const queryStr = onCleanConfirmPath ? location.search.replace(/^\?/,'') : hashQueryStr;
   const isPreview = !!queryStr && new URLSearchParams(queryStr).get('key') === PREVIEW_KEY;
-  if(parts[0]==='booking-confirmed' && sessionStorage.getItem(BOOKING_FLAG)!=='1' && !isPreview){
+  /* The clean URL itself (/cpaiconsultationconfirmed, no hash) is also a
+     valid entry point, not just the internal session-flag flow above —
+     it's the redirect target configured in GHL's own calendar/funnel
+     settings for bookings made OUTSIDE this site's embedded calendar.
+     Nobody lands here by accident, and the page shows nothing personal,
+     so it's safe to render without the flag. */
+  const allowConfirm = sessionStorage.getItem(BOOKING_FLAG)==='1' || isPreview || onCleanConfirmPath;
+  if(parts[0]==='booking-confirmed' && !allowConfirm){
     location.hash = '#/contact';
     return;
   }
@@ -1621,7 +1633,7 @@ function route(){
   else if(parts[0]==='industry'){ html = pageIndustry(parts[1]); nav='services'; }
   else if(parts[0]==='about'){ html = pageAbout(); nav='about'; }
   else if(parts[0]==='contact'){ html = pageContact(); nav='contact'; }
-  else if(parts[0]==='booking-confirmed'){ html = pageBookingConfirmed(isPreview); nav='contact'; }
+  else if(parts[0]==='booking-confirmed'){ html = pageBookingConfirmed(allowConfirm); nav='contact'; }
   else if(parts[0]==='privacy'){ html = pagePrivacy(); }
   else if(parts[0]==='terms'){ html = pageTerms(); }
   else { html = pageHome(); nav='home'; }
